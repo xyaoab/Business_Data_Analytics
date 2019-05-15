@@ -95,13 +95,30 @@ data.new$'poutcome.failure' <- NULL
 names(data.new)[names(data.new) == "job.blue-collar"] <- "job.blue_collar"
 names(data.new)[names(data.new) == "job.self-employed"] <- "job.self_employed"
 names(data.new)
+
+####
+data.new <- data
+data.new$job <- as.numeric(factor(data$job))
+data.new$marital <- as.numeric(factor(data$marital))
+data.new$education <- as.numeric(factor(data$education))
+data.new$default <- as.numeric(factor(data$default))
+data.new$housing <- as.numeric(factor(data$housing))
+data.new$loan <- as.numeric(factor(data$loan))
+data.new$contact <- as.numeric(factor(data$contact))
+data.new$day_of_week <- as.numeric(factor(data$day_of_week))
+data.new$month <- as.numeric(factor(data$month))
+data.new$poutcome <- as.numeric(factor(data$poutcome))
+
 #split into training and testing set##########################  
-split <- sample.split(data.new$y, SplitRatio=0.7)
+##split <- sample.split(data.new$y, SplitRatio=0.5)
+#train <- subset(data.new, split == TRUE)
+#test <- subset(data.new, split == FALSE)
+
+split <- sample.split(data.new$y, SplitRatio=0.5)
 train <- subset(data.new, split == TRUE)
 test <- subset(data.new, split == FALSE)
 nrow(train)
 nrow(test)
-
 #pairs(y~age+job.blue_collar+job.entrepreneur+job.housemaid+job.management+job.retired+
 #        job.self_employed+job.services+job.student+job.technician+job.unemployed
 #        +marital.married+marital.single+education.basic.6y+education.basic.9y+education.high.school+
@@ -110,18 +127,17 @@ nrow(test)
 
 #subset selection########################## 
 #exhaustive search
-subsets <- regsubsets(x=as.matrix(train[,1:46]),y=as.matrix(train[,"y"]))
-plot(subsets, main="BIC") #month.may, campaign, emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m
-plot(subsets,scale="Cp",main="Cp") #job.retired, job.technician, month.may, campaign, previous, emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m, nr.employed
-plot(subsets,scale="adjr2",main="adjr2")
-plot(subsets,scale="r2",main="r2")
+head(train)
+subsets <- regsubsets(x=as.matrix(train[,1:20]),y=as.matrix(train[,"y"]))
+plot(subsets, main="BIC") #month.may, month.mar, month.nov, duration, pdays, emp.var.rate, euribor3m, nr.employed
+#contact+month+duration+pdays+ emp.var.rate + euribor3m+cons.price.idx+cons.conf.idx
 plot(summary(subsets)$adjr2 ,xlab="Number of Variables ",ylab="adjr2", type="l")
 plot(summary(subsets)$bic ,xlab="Number of Variables ",ylab="bic", type="l")
 plot(summary(subsets)$cp ,xlab="Number of Variables ",ylab="cp", type="l")
 
-pairs(y~month.mar + pdays + emp.var.rate+cons.price.idx+cons.conf.idx+ poutcome.success+duration, data=data.new)
-#model.dual <-step(lm(y~1,data=train),direction="both",scope=~month.may + campaign+ emp.var.rate+cons.price.idx+cons.conf.idx+ euribor3m)
-#summary(model.dual)
+#pairs(y~month.mar + pdays + emp.var.rate+cons.price.idx+cons.conf.idx+ poutcome.success+duration, data=data.new)
+model.dual <-step(lm(y~1,data=train),direction="both",scope=~month.may+month.mar+ month.nov + duration +  pdays+ emp.var.rate+ nr.employed+ euribor3m)
+summary(model.dual)
 #Stepwise########################## 
 nullmodel<- glm(y ~ 1, data = train) #only for the intercept
 fullmodel<- glm(y ~ ., data = train) #includes all variables
@@ -131,7 +147,6 @@ model.step<- step(nullmodel, scope = list(lower = nullmodel, upper = fullmodel),
 summary(model.step)
 coef(model.step)
 ########################## 
-#pdays, duration, cons.conf.idx, poutcome.success, cons.price.idx, month.mar, emp.var.rate
 #model <- lm(y~., data=train)
 #model_fit<- lm(y~pdays+duration+ cons.conf.idx+poutcome.success+ cons.price.idx+month.mar+emp.var.rate, data=train)
 #anova(model, model_fit)
