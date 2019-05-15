@@ -7,7 +7,6 @@ library(caTools)
 library(dummies)
 setwd("/Users/Abby/Documents/isom3530/proj/")
 data <- read.csv("bank_marketing.csv",sep=";") 
-summary(data)
 
 #summary: portion of missing values "unknown "availavle########################## 
 sapply(1:ncol(data),function(x) paste(names(data)[x],":",typeof(data[,x]),sep=""))
@@ -21,9 +20,20 @@ Hmisc::describe(data)
 head(data)
 
 ##missing unknown remove ########################## 
-data <- data[data$job!="unknown" & data$marital!="unknown"& data$education!="unknown"& data$poutcome!="nonexistent"&
+data <- data[data$job!="unknown" & data$marital!="unknown"& data$education!="unknown"& # data$poutcome!="nonexistent"&
              data$default!="unknown" & data$housing!="unknown"& data$loan!="unknown",]
 data <- droplevels(data)
+# histogram visualize categorical data########################## 
+ggplot(data, aes(x=job, color=y)) +geom_bar(fill="white")
+ggplot(data, aes(x=marital, color=y)) +geom_bar(fill="white")
+ggplot(data, aes(x=education, color=y)) +geom_bar(fill="white")
+ggplot(data, aes(x=default, color=y)) +geom_bar(fill="white")
+ggplot(data, aes(x=housing, color=y)) +geom_bar(fill="white")
+ggplot(data, aes(x=loan, color=y)) +geom_bar(fill="white")
+ggplot(data, aes(x=contact, color=y)) +geom_bar(fill="white")
+ggplot(data, aes(x=month, color=y)) +geom_bar(fill="white")
+ggplot(data, aes(x=day_of_week, color=y)) +geom_bar(fill="white")
+ggplot(data, aes(x=poutcome, color=y)) +geom_bar(fill="white")
 
 
 #box plot visualize numerical data########################## 
@@ -50,6 +60,20 @@ data$euribor3m <- scale(data$euribor3m,center=TRUE, scale=TRUE)
 data$nr.employed   <- scale(data$nr.employed,center=TRUE, scale=TRUE)
 summary(data)
 
+#density plot visualize numerical data########################## 
+ggplot(data) + geom_density(aes(x=age,color = y))
+ggplot(data) + geom_density(aes(x=duration,color = y))
+ggplot(data) + geom_density(aes(x=campaign,color = y))
+ggplot(data) + geom_density(aes(x=pdays,color = y))
+ggplot(data) + geom_density(aes(x=previous,color = y))
+ggplot(data) + geom_density(aes(x=emp.var.rate ,color = y))
+ggplot(data) + geom_density(aes(x=cons.price.idx,color = y))
+ggplot(data) + geom_density(aes(x=euribor3m ,color = y))
+ggplot(data) + geom_density(aes(x=nr.employed,color = y))
+
+
+
+
 # y = 1/0########################## 
 data$y <- ifelse(data$y=="yes",1,0)
 data$y<- as.numeric(as.character(data$y))
@@ -68,10 +92,9 @@ data.new$'contact.cellular' <- NULL
 data.new$'month.apr' <- NULL
 data.new$'day_of_week.mon' <- NULL
 data.new$'poutcome.failure' <- NULL
-names(data.new)
 names(data.new)[names(data.new) == "job.blue-collar"] <- "job.blue_collar"
 names(data.new)[names(data.new) == "job.self-employed"] <- "job.self_employed"
-
+names(data.new)
 #split into training and testing set##########################  
 split <- sample.split(data.new$y, SplitRatio=0.7)
 train <- subset(data.new, split == TRUE)
@@ -90,6 +113,12 @@ nrow(test)
 subsets <- regsubsets(x=as.matrix(train[,1:46]),y=as.matrix(train[,"y"]))
 plot(subsets, main="BIC") #month.may, campaign, emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m
 plot(subsets,scale="Cp",main="Cp") #job.retired, job.technician, month.may, campaign, previous, emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m, nr.employed
+plot(subsets,scale="adjr2",main="adjr2")
+plot(subsets,scale="r2",main="r2")
+plot(summary(subsets)$adjr2 ,xlab="Number of Variables ",ylab="adjr2", type="l")
+plot(summary(subsets)$bic ,xlab="Number of Variables ",ylab="bic", type="l")
+plot(summary(subsets)$cp ,xlab="Number of Variables ",ylab="cp", type="l")
+
 pairs(y~month.mar + pdays + emp.var.rate+cons.price.idx+cons.conf.idx+ poutcome.success+duration, data=data.new)
 #model.dual <-step(lm(y~1,data=train),direction="both",scope=~month.may + campaign+ emp.var.rate+cons.price.idx+cons.conf.idx+ euribor3m)
 #summary(model.dual)
@@ -100,5 +129,9 @@ model.step<- step(nullmodel, scope = list(lower = nullmodel, upper = fullmodel),
 
 
 summary(model.step)
+coef(model.step)
 ########################## 
 #pdays, duration, cons.conf.idx, poutcome.success, cons.price.idx, month.mar, emp.var.rate
+#model <- lm(y~., data=train)
+#model_fit<- lm(y~pdays+duration+ cons.conf.idx+poutcome.success+ cons.price.idx+month.mar+emp.var.rate, data=train)
+#anova(model, model_fit)
