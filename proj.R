@@ -1,10 +1,15 @@
 install.packages("caTools")
+install.packages("pROC")
 install.packages("leaps")
 library(leaps)
 library(Hmisc)
 library(ggplot2)
 library(caTools)
 library(dummies)
+library(rsample)     # data splitting 
+library(dplyr)       # data wranglingyes
+library(rpart)       # performing regression trees
+library(rpart.plot)  # plotting regression trees
 setwd("/Users/Abby/Documents/isom3530/proj/")
 data <- read.csv("bank_marketing.csv",sep=";") 
 
@@ -114,16 +119,11 @@ data.new$poutcome <- as.numeric(factor(data$poutcome))
 #train <- subset(data.new, split == TRUE)
 #test <- subset(data.new, split == FALSE)
 
-split <- sample.split(data.new$y, SplitRatio=0.5)
+split <- sample.split(data.new$y, SplitRatio=0.7)
 train <- subset(data.new, split == TRUE)
 test <- subset(data.new, split == FALSE)
 nrow(train)
 nrow(test)
-#pairs(y~age+job.blue_collar+job.entrepreneur+job.housemaid+job.management+job.retired+
-#        job.self_employed+job.services+job.student+job.technician+job.unemployed
-#        +marital.married+marital.single+education.basic.6y+education.basic.9y+education.high.school+
-#        education.illiterate+education.professional.course+education.university.degree+default.yes
-#        +housing.yes + loan.yes+contact.telephone+month.may+day_of_week.tue+poutcome.success+age+duration, data=data.new)
 
 #subset selection########################## 
 #exhaustive search
@@ -136,17 +136,151 @@ plot(summary(subsets)$bic ,xlab="Number of Variables ",ylab="bic", type="l")
 plot(summary(subsets)$cp ,xlab="Number of Variables ",ylab="cp", type="l")
 
 #pairs(y~month.mar + pdays + emp.var.rate+cons.price.idx+cons.conf.idx+ poutcome.success+duration, data=data.new)
-model.dual <-step(lm(y~1,data=train),direction="both",scope=~month.may+month.mar+ month.nov + duration +  pdays+ emp.var.rate+ nr.employed+ euribor3m)
+model.dual <-step(lm(y~1,data=train),direction="both",scope=~contact+month+duration+
+                    pdays+emp.var.rate + euribor3m+cons.price.idx+cons.conf.idx)
 summary(model.dual)
 #Stepwise########################## 
-nullmodel<- glm(y ~ 1, data = train) #only for the intercept
-fullmodel<- glm(y ~ ., data = train) #includes all variables
-model.step<- step(nullmodel, scope = list(lower = nullmodel, upper = fullmodel),direction = "both")
 
 
-summary(model.step)
-coef(model.step)
-########################## 
-#model <- lm(y~., data=train)
-#model_fit<- lm(y~pdays+duration+ cons.conf.idx+poutcome.success+ cons.price.idx+month.mar+emp.var.rate, data=train)
-#anova(model, model_fit)
+#########model
+nullmodel<- glm(y ~ 1, data = train) 
+log.model <- glm(y~contact+month+duration+pdays+ emp.var.rate +cons.price.idx+cons.conf.idx,family=binomial(),train,maxit=100)
+summary(log.model)
+
+library(lmtest)
+require(DescTools)
+lrtest(log.model, nullmodel)
+PseudoR2(log.model, which="all")
+
+prediction <- predict(log.model,newdata = test,type="response")
+library(caret)
+
+conMat <- confusionMatrix(data=factor(as.numeric(prediction>0.5)),reference=factor(test$y))
+TP <- conMat$table[2,2]
+TN <- conMat$table[1,1]
+FP <- conMat$table[2,1]
+FN <- conMat$table[1,2]
+
+N <- TN + FP
+P <- TP + FN
+
+FPRate <- FP/N #False positive rate = 1 - Specificity = Type 1 error
+TPRate <- TP/P #Sensitivity OR 1-Type II error
+Specif <- TN/N #Specificity
+Pos.Pred.value <- TP/(TP+FP) #Precision, or Positive prediction value
+Neg.Pred.value <- TN/(TN+FN)
+overall.error.rate <- (FP+FN)/(N+P)
+Accuracy <- 1-overall.error.rate
+
+library(car)
+vif(log.model)
+table(test$y,as.numeric(prediction >=0.25))
+
+#Plot a graph of error rate vs different threshold
+thresholdList <- seq(0.01,0.87,by=0.01)
+i <- 1
+errorRateList <- array(dim=87)
+SpecList <- array(dim=87)
+SensitList <- array(dim=87)
+for(t in thresholdList){ #t<-0.5
+  temp.confusion.matrix <- table(test$y,prediction >=t)
+  temp_FP <- temp.confusion.matrix[1,"TRUE"]
+  temp_FN <- temp.confusion.matrix[2,"FALSE"]
+  temp_TP <- temp.confusion.matrix[2,"TRUE"]
+  temp_TN <- temp.confusion.matrix[1,"FALSE"]
+  errorRateList[i] <- (temp_FP+temp_FN)/(temp_FP+temp_FN+temp_TP+temp_TN)
+  SpecList[i] <- temp_TN/(temp_FP+temp_TN)
+  SensitList[i] <- temp_TP/(temp_TP+temp_FN)
+  i<- i+1
+}
+
+
+plot(thresholdList,1-errorRateList,type="l",col="red",xlim=c(0,1),ylim=c(0,1))#accurancy
+lines(thresholdList,SpecList,col="blue")
+lines(thresholdList,SensitList,col="green")
+legend(0.1,0.3,legend=c("Accuracy","Specificity","Sensitivity"),col=c("red","blue","green"),lty=1)
+
+#ROC curve
+plot(1-SpecList,SensitList,type="l",xlim=c(0,1),ylim=c(0,1))
+abline(0,1)
+#using function
+library(pROC)
+roc_obj <- roc(test$y, prediction)
+plot(roc_obj)
+auc(roc_obj) #Find the auc
+
+#-------Find the decision rule: cost-sensitive classification-------- t=0.25
+#Find the decision rule that minimize the cost.
+#e.g. 0-1 Loss
+i <- 1
+costList <- array(dim=87)
+for(t in thresholdList){
+  temp.confusion.matrix <- table(test$y,prediction >=t)
+  temp_FP <- temp.confusion.matrix[1,2]
+  temp_FN <- temp.confusion.matrix[2,1]
+  temp_TP <- temp.confusion.matrix[2,2]
+  temp_TN <- temp.confusion.matrix[1,1]
+  temp_cost <- temp_FN*2 + temp_FP
+  costList[i] <- temp_cost
+  i<- i+1
+}
+plot(thresholdList,costList,type="l")
+best_threshold <- thresholdList[which.min(costList)]
+best_threshold #0.25
+
+#Get the rates using "confusionMatrix" function directly
+#Note: You need to put the class you refer as "positive" to the first level.
+conMat <- confusionMatrix(data=factor(as.numeric(prediction>0.25),levels=c(1,0)),reference=factor(test$y,levels=c(1,0)))
+
+conMat$byClass #You can get all the rates directly using this function.
+
+#check
+TP <- conMat$table[1,1]
+TN <- conMat$table[2,2]
+FP <- conMat$table[1,2]
+FN <- conMat$table[2,1]
+
+#Sensitivity
+Sensit <- TP/(TP+FN)
+conMat$byClass["Sensitivity"] #same
+
+#Specificity
+Spec <- TN/(TN+FP)
+conMat$byClass["Specificity"] #same
+
+
+
+####################classficiation tree####################
+par(mfrow=c(1,1))
+# grow tree 
+fit <- rpart(y~contact+month+duration+pdays+ emp.var.rate +cons.price.idx+cons.conf.idx,
+             method="class", data=train) #Default, we use GINI
+
+printcp(fit) # display the results 
+plotcp(fit) # visualize cross-validation results 
+summary(fit) # detailed summary of splits
+
+# plot tree 
+plot(fit, uniform=TRUE, 
+     main="Classification Tree for Bank")
+text(fit, use.n=TRUE, all=TRUE, cex=.8)
+
+
+# prune the tree 
+pfit<- prune(fit, cp= fit$cptable[which.min(fit$cptable[,"xerror"]),"CP"])
+
+# plot the pruned tree 
+plot(pfit, uniform=TRUE, 
+     main="Pruned Classification Tree for Bank")
+text(pfit, use.n=TRUE, all=TRUE, cex=.8)
+
+#-----Using a loss matrix------------Example 2.3
+fit_with_cost  <- rpart(y~contact+month+duration+pdays+ emp.var.rate +cons.price.idx+cons.conf.idx,method="class", data=train,parms=
+                          list(loss=matrix(c(0,1,5,0),byrow=TRUE,nrow=2)))
+
+plot(fit_with_cost, uniform=TRUE, 
+     main="Classification Tree for Kyphosis")
+text(fit_with_cost, use.n=TRUE, all=TRUE, cex=.8)
+
+par(mfrow=c(1,2)) # two plots on one page
+rsq.rpart(fit)
