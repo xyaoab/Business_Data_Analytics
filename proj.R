@@ -115,9 +115,6 @@ data.new$month <- as.numeric(factor(data$month))
 data.new$poutcome <- as.numeric(factor(data$poutcome))
 
 #split into training and testing set##########################  
-##split <- sample.split(data.new$y, SplitRatio=0.5)
-#train <- subset(data.new, split == TRUE)
-#test <- subset(data.new, split == FALSE)
 
 split <- sample.split(data.new$y, SplitRatio=0.7)
 train <- subset(data.new, split == TRUE)
@@ -140,8 +137,13 @@ model.dual <-step(lm(y~1,data=train),direction="both",scope=~contact+month+durat
                     pdays+emp.var.rate + euribor3m+cons.price.idx+cons.conf.idx)
 summary(model.dual)
 #Stepwise########################## 
-
-
+library(car)
+vif(model.dual)
+####linear model 
+install.packages("EnvStats")
+library(EnvStats)
+model1 <- lm(y~1, data=train)
+anova(model1,model.dual)
 #########model
 nullmodel<- glm(y ~ 1, data = train) 
 log.model <- glm(y~contact+month+duration+pdays+ emp.var.rate +cons.price.idx+cons.conf.idx,family=binomial(),train,maxit=100)
@@ -251,36 +253,44 @@ conMat$byClass["Specificity"] #same
 
 
 ####################classficiation tree####################
+data.new <- dummy.data.frame(data=data,c("job","marital","education","default","housing"
+                                         ,"loan","contact","month","day_of_week","poutcome"),sep = ".")
+names(data.new)[names(data.new) == "job.blue-collar"] <- "job.blue_collar"
+names(data.new)[names(data.new) == "job.self-employed"] <- "job.self_employed"
+names(data.new)
 par(mfrow=c(1,1))
 # grow tree 
-fit <- rpart(y~contact+month+duration+pdays+ emp.var.rate +cons.price.idx+cons.conf.idx,
-             method="class", data=train) #Default, we use GINI
-
-printcp(fit) # display the results 
-plotcp(fit) # visualize cross-validation results 
-summary(fit) # detailed summary of splits
-
-# plot tree 
-plot(fit, uniform=TRUE, 
-     main="Classification Tree for Bank")
-text(fit, use.n=TRUE, all=TRUE, cex=.8)
-
-
+fit <- rpart(y~.,method="class", data=train,parms=
+               list(loss=matrix(c(0,1,1,0),byrow=TRUE,nrow=2)))
+#Default, we use GINI
+printcp(fit)
 # prune the tree 
 pfit<- prune(fit, cp= fit$cptable[which.min(fit$cptable[,"xerror"]),"CP"])
-
+printcp(pfit) # display the results 
+plotcp(pfit) # visualize cross-validation results 
+summary(pfit) # detailed summary of splits
 # plot the pruned tree 
 plot(pfit, uniform=TRUE, 
-     main="Pruned Classification Tree for Bank")
+     main="Pruned Classification Tree for Subscription")
 text(pfit, use.n=TRUE, all=TRUE, cex=.8)
 
-#-----Using a loss matrix------------Example 2.3
-fit_with_cost  <- rpart(y~contact+month+duration+pdays+ emp.var.rate +cons.price.idx+cons.conf.idx,method="class", data=train,parms=
-                          list(loss=matrix(c(0,1,5,0),byrow=TRUE,nrow=2)))
+plot(pfit$variable.importance)
+pfit$variable.importance
 
-plot(fit_with_cost, uniform=TRUE, 
-     main="Classification Tree for Kyphosis")
-text(fit_with_cost, use.n=TRUE, all=TRUE, cex=.8)
+pfit.pred <- predict(pfit, test,type="class")
+conf <-table(pfit.pred,test$y)
+library(caret)
+sensitivity(conf)
+specificity(conf)
+confusionMatrix(conf)
+library(InformationValue)
+misClassError(pfit.pred,test$y)
 
-par(mfrow=c(1,2)) # two plots on one page
-rsq.rpart(fit)
+roc_obj <- roc(test$y, as.numeric(as.character(pfit.pred)))
+plot(roc_obj)
+auc(roc_obj)
+
+
+
+
+
